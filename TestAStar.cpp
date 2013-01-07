@@ -45,9 +45,9 @@ int main (int argc, char **argv)
 		fread (buf.data(), 1, width + 1, mapFile);
 		for (int j = 0; j < width; j++) {
 			if (buf[j] == '.' || buf[j] == 'G')
-				grid[width*i+j] = 1;
-			else
 				grid[width*i+j] = 0;
+			else
+				grid[width*i+j] = 1;
 		}
 	}
 	int doContinue = 1;

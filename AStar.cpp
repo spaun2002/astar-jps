@@ -5,6 +5,8 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <set>
+#include <queue>
 
 // Distance metrics, you might want to change these to match your game mechanics
 
@@ -23,52 +25,94 @@ inline static double estimateDistance (Coordinate start, Coordinate end)
 // all costs to 1
 static double preciseDistance (Coordinate start, Coordinate end)
 {
-	if (start.x - end.x != 0 && start.y - end.y != 0)
-		return sqrt (pow (start.x - end.x, 2) + 
-			     pow (start.y - end.y, 2)) ;
-	else
-		return abs (start.x - end.x) + abs (start.y - end.y);
+  using namespace std;
+  auto x = abs(start.x - end.x);
+  auto y = abs(start.y - end.y);
+  return sqrt(x*x + y*y);
 }
 
 // Below this point, not a lot that there should be much need to change!
 
-typedef int node;
-
-typedef struct astar {
-	const char *grid;
-	Coordinate bounds;
-	node start;
-	node goal;
-	queue *open;
-	char *closed;
-	double *gScores;
-	node *cameFrom;
-	int *solutionLength;
-} astar_t;
+//struct AStar {
+//	const char *grid;
+//	Coordinate bounds;
+//	node start;
+//	node goal;
+//	queue *open;
+//	char *closed;
+//	double *gScores;
+//	node *cameFrom;
+//	int *solutionLength;
+//};
 
 // The order of directions is: 
 // N, NE, E, SE, S, SW, W, NW 
-typedef unsigned char direction;
-#define NO_DIRECTION 8
-typedef unsigned char directionset;
+//typedef unsigned char direction;
+//#define NO_DIRECTION 8
+//typedef unsigned char directionset;
+
+enum class Direction
+{
+  N = 0,
+  NE,
+  E,
+  SE,
+  S, 
+  SW, 
+  W, 
+  NW,
+  NO_DIRECTION = 8
+};
+
+typedef std::set<Direction> DirectionSet;
+
+typedef int node;
+
+class AStar_jsp
+{
+public:
+  const char* m_grid;
+  Coordinate m_bounds;
+  node m_start;
+  node m_goal;
+  queue* m_open;
+  char *m_closed;
+  double *m_gScores;
+  node *m_cameFrom;
+  int *m_solutionLength;
+
+public:
+  bool isEnterable (const Coordinate& coord);
+  DirectionSet forcedNeighbours (const Coordinate& coord, Direction dir);
+  void addToOpenSet (int node, int nodeFrom);
+  bool HasForcedNeighbours(Coordinate coord, Direction dir);
+  int jump(Direction dir, int start);
+  int nextNodeInSolution (int *target, int node);
+  int *recordSolution ();
+  Direction directionWeCameFrom (int node, int nodeFrom);
+};
 
 // return and remove a direction from the set
 // returns NO_DIRECTION if the set was empty
-static direction nextDirectionInSet (directionset *dirs)
+static Direction nextDirectionInSet (DirectionSet& dirs)
 {
-	for (int i = 0; i < 8; i++) {
-		char bit = 1 << i;
-		if (*dirs & bit) {
-			*dirs ^= bit;
-			return i;
-		}
-	}
-	return NO_DIRECTION;
+  if (dirs.empty())
+    return Direction::NO_DIRECTION;
+
+  auto result = *dirs.begin();
+  dirs.erase(dirs.begin());
+
+  return result;
 }
 
-static directionset addDirectionToSet (directionset dirs, direction dir)
+static void addDirectionToSet (DirectionSet& dirs, Direction dir)
 {
-	return dirs | 1 << dir;
+  dirs.insert(dir);
+}
+
+static void addDirectionsToSet(DirectionSet& dirs, const DirectionSet& newDirections)
+{
+  dirs.insert(begin(newDirections), end(newDirections));
 }
 
 /* Coordinates are represented either as pairs of an x-coordinate and
@@ -103,36 +147,53 @@ static int contained (Coordinate bounds, Coordinate c)
 }
 
 // is this coordinate within the map bounds, and also walkable?
-static int isEnterable (astar_t *astar, Coordinate coord)
+bool AStar_jsp::isEnterable (const Coordinate& coord)
 {
-	node node = getIndex (astar->bounds, coord);
-	return contained (astar->bounds, coord) && 
-		astar->grid[node];
+	node node = getIndex (this->m_bounds, coord);
+	return contained (this->m_bounds, coord) && 
+		this->m_grid[node];
 }
 
-static int directionIsDiagonal (direction dir)
+static int directionIsDiagonal (Direction dir)
 {
-	return (dir % 2) != 0;
+  //return (dir == Direction::NE || dir == Direction::NW || dir == Direction::SE || dir == Direction::SW);
+  return (static_cast<int>(dir) % 2) != 0;
 }
 
 // the coordinate one tile in the given direction
-static Coordinate adjustInDirection (Coordinate c, int dir)
+static Coordinate adjustInDirection (Coordinate c, Direction dir)
 {
 	// we want to implement "rotation" - that is, for instance, we can
 	// subtract 2 from the direction "north" and get "east"
 	// C's modulo operator doesn't quite behave the right way to do this,
 	// but for our purposes this kluge should be good enough
-	switch ((dir + 65536) % 8) {
-	case 0: return Coordinate(c.x, c.y-1);
-  case 1: return Coordinate(c.x + 1, c.y - 1);
-  case 2: return Coordinate(c.x + 1, c.y    );
-  case 3: return Coordinate(c.x + 1, c.y + 1);
-  case 4: return Coordinate(c.x, c.y + 1    );
-  case 5: return Coordinate(c.x - 1, c.y + 1);
-  case 6: return Coordinate(c.x - 1, c.y    );
-  case 7: return Coordinate(c.x - 1, c.y - 1);
-	}
-	return Coordinate( -1, -1 );
+  switch (dir)
+  {
+  case Direction::N:  return Coordinate(c.x,     c.y - 1);
+  case Direction::NE: return Coordinate(c.x + 1, c.y - 1);
+  case Direction::E:  return Coordinate(c.x + 1, c.y    );
+  case Direction::SE: return Coordinate(c.x + 1, c.y + 1);
+  case Direction::S:  return Coordinate(c.x,     c.y + 1);
+  case Direction::SW: return Coordinate(c.x - 1, c.y + 1);
+  case Direction::W:  return Coordinate(c.x - 1, c.y    );
+  case Direction::NW: return Coordinate(c.x - 1, c.y - 1);
+  default: 
+    return Coordinate( -1, -1 );
+  }
+}
+
+//
+// rotationFactor - numbers from -7 to 7 including
+//
+static Direction RotateDirection(Direction dir, int rotationFactor)
+{
+  // 7 0 1
+  // 6 x 2
+  // 5 4 3
+  int tmp = static_cast<int>(dir);
+  tmp += rotationFactor + 65536;
+  tmp %= static_cast<int>(Direction::NO_DIRECTION);
+  return static_cast<Direction>(tmp);
 }
 
 // logical implication operator
@@ -201,107 +262,129 @@ static int hasForcedNeighbours (astar_t *astar, Coordinate coord, int dir)
 #undef ENTERABLE
 }
 */
-static directionset forcedNeighbours (astar_t *astar, 
-				      Coordinate coord, 
-				      direction dir)
+DirectionSet AStar_jsp::forcedNeighbours (const Coordinate& coord, 
+                                          Direction dir)
 {
-	if (dir == NO_DIRECTION)
-		return 0;
+  DirectionSet dirs;
+	if (dir == Direction::NO_DIRECTION)
+		return dirs;
 
-	directionset dirs = 0;
-#define ENTERABLE(n) isEnterable (astar, \
-				  adjustInDirection (coord, (dir + (n)) % 8))
+#define ENTERABLE(n) isEnterable (adjustInDirection (coord, RotateDirection(dir, n)))
+
 	if (directionIsDiagonal (dir)) {
+
 		if (!implies (ENTERABLE (6), ENTERABLE (5)))
-			dirs = addDirectionToSet (dirs, (dir + 6) % 8);
+			addDirectionToSet (dirs, RotateDirection(dir,6));
 		if (!implies (ENTERABLE (2), ENTERABLE (3)))
-			dirs = addDirectionToSet (dirs, (dir + 2) % 8);
-	}
+			addDirectionToSet (dirs, RotateDirection(dir,2));
+	
+  }
 	else {
-		if (!implies (ENTERABLE (7), ENTERABLE (6)))
-			dirs = addDirectionToSet (dirs, (dir + 7) % 8);
+	
+    if (!implies (ENTERABLE (7), ENTERABLE (6)))
+			addDirectionToSet (dirs, RotateDirection(dir, 7));
 		if (!implies (ENTERABLE (1), ENTERABLE (2)))
-			dirs = addDirectionToSet (dirs, (dir + 1) % 8);
-	}	
+			addDirectionToSet (dirs, RotateDirection(dir,1));
+	
+  }	
 #undef ENTERABLE	
 	return dirs;
 }
 
-static directionset naturalNeighbours (direction dir)
+static DirectionSet MakeFullDirectionSet()
 {
-	if (dir == NO_DIRECTION)
-		return 255;
+  DirectionSet dirs;
+  dirs.insert(Direction::N);
+  dirs.insert(Direction::NE);
+  dirs.insert(Direction::E);
+  dirs.insert(Direction::SE);
+  dirs.insert(Direction::S);
+  dirs.insert(Direction::SW);
+  dirs.insert(Direction::W);
+  dirs.insert(Direction::NW);
+  return dirs;
+}
 
-	directionset dirs = 0;
-	dirs = addDirectionToSet (dirs, dir);
-	if (directionIsDiagonal (dir)) {
-		dirs = addDirectionToSet (dirs, (dir + 1) % 8);
-		dirs = addDirectionToSet (dirs, (dir + 7) % 8);
-	}
+static DirectionSet FindStrightDirections(Direction dir)
+{
+  DirectionSet dirs;
+  if (!directionIsDiagonal(dir))
+    return dirs;
+
+  dirs.insert(RotateDirection(dir, 1));
+  dirs.insert(RotateDirection(dir, -1));
+  return dirs;
+}
+
+static DirectionSet naturalNeighbours (Direction dir)
+{
+	if (dir == Direction::NO_DIRECTION)
+		return MakeFullDirectionSet();
+
+	DirectionSet dirs;
+	addDirectionToSet (dirs, dir);
+  addDirectionsToSet(dirs, FindStrightDirections(dir));
 	return dirs;
 }
 
-static void addToOpenSet (astar_t *astar,
-			  int node, 
-			  int nodeFrom)
+void AStar_jsp::addToOpenSet (int node, 
+                              int nodeFrom)
 {
-	Coordinate nodeCoord = getCoord (astar->bounds, node);
-	Coordinate nodeFromCoord = getCoord (astar->bounds, nodeFrom);
+	Coordinate nodeCoord = getCoord (this->m_bounds, node);
+	Coordinate nodeFromCoord = getCoord (this->m_bounds, nodeFrom);
 
-	if (!exists (astar->open, node)) {
-		astar->cameFrom[node] = nodeFrom;
-		astar->gScores[node] = astar->gScores[nodeFrom] + 
-			preciseDistance (nodeFromCoord, nodeCoord);
-		insert (astar->open, node, astar->gScores[node] + 
-			estimateDistance (nodeCoord, 
-					  getCoord (astar->bounds, astar->goal)));
+	if (!exists (this->m_open, node)) {
+		this->m_cameFrom[node] = nodeFrom;
+		this->m_gScores[node] = this->m_gScores[nodeFrom] + preciseDistance(nodeFromCoord, nodeCoord);
+		insert (this->m_open, node, this->m_gScores[node] + estimateDistance(nodeCoord, getCoord (this->m_bounds, this->m_goal)));
 	}
-	else if (astar->gScores[node] > 
-		 astar->gScores[nodeFrom] + 
-		 preciseDistance (nodeFromCoord, nodeCoord)) {
-		astar->cameFrom[node] = nodeFrom;
-		double oldGScore = astar->gScores[node];
-		astar->gScores[node] = astar->gScores[nodeFrom] + 
-			preciseDistance (nodeFromCoord, nodeCoord);
-		double newPri = priorityOf (astar->open, node)
-			- oldGScore
-			+ astar->gScores[node];
-		changePriority (astar->open, node, newPri);
+	else if (this->m_gScores[node] > this->m_gScores[nodeFrom] + preciseDistance(nodeFromCoord, nodeCoord)) 
+  {
+		this->m_cameFrom[node] = nodeFrom;
+		double oldGScore = this->m_gScores[node];
+		this->m_gScores[node] = this->m_gScores[nodeFrom] + preciseDistance (nodeFromCoord, nodeCoord);
+		double newPri = priorityOf (this->m_open, node) - oldGScore + this->m_gScores[node];
+		changePriority (this->m_open, node, newPri);
 	}	
 }
 
+bool AStar_jsp::HasForcedNeighbours(Coordinate coord, Direction dir)
+{
+  return !forcedNeighbours(coord, dir).empty();
+}
 
 // directly translated from "algorithm 2" in the paper
-static int jump (astar_t *astar, direction dir, int start)
+int AStar_jsp::jump(Direction dir, int start)
 {
-	Coordinate coord = adjustInDirection (getCoord (astar->bounds, start), dir);
-	int node = getIndex (astar->bounds, coord);
-	if (!isEnterable (astar, coord))
+	Coordinate coord = adjustInDirection (getCoord (this->m_bounds, start), dir);
+	int node = getIndex(this->m_bounds, coord);
+	if (!isEnterable (coord))
 		return -1;
 
-	if (node == astar->goal || 
-	    forcedNeighbours (astar, coord, dir)) {
+	if (node == this->m_goal || HasForcedNeighbours(coord, dir)) 
+  {
 		return node;
 	}
 
-	if (directionIsDiagonal (dir)) {
-		int next = jump (astar, (dir + 7) % 8, node);
-		if (next >= 0)
-			return node;
-		next = jump (astar, (dir + 1) % 8, node);
-		if (next >= 0)
-			return node;
-	}
-	return jump (astar, dir, node);
+  auto strights = FindStrightDirections(dir);
+  if (!strights.empty())
+  {
+    for (auto it = begin(strights); it != end(strights); ++it)
+    {
+      if (jump(*it, node) >= 0)
+        return node;
+    }
+  }
+
+	return jump (dir, node);
 }
 
 // path interpolation between jump points in here
-static int nextNodeInSolution (astar_t *astar,
-			       int *target,
-			       int node)
+int AStar_jsp::nextNodeInSolution (int *target,
+                               int node)
 {
-	Coordinate c = getCoord (astar->bounds, node);
-	Coordinate cTarget = getCoord (astar->bounds, *target);
+	Coordinate c = getCoord (this->m_bounds, node);
+	Coordinate cTarget = getCoord (this->m_bounds, *target);
 
 	if (c.x < cTarget.x) 
 		c.x++;
@@ -313,79 +396,95 @@ static int nextNodeInSolution (astar_t *astar,
 	else if (c.y > cTarget.y)
 		c.y--;
 
-	node = getIndex (astar->bounds, c);
+	node = getIndex (this->m_bounds, c);
 
 	if (node == *target)
-		*target = astar->cameFrom[*target];
+		*target = this->m_cameFrom[*target];
 
 	return node;
 }
 
 // a bit more complex than the usual A* solution-recording method,
 // due to the need to interpolate path chunks
-static int *recordSolution (astar_t *astar)
+int* AStar_jsp::recordSolution ()
 {
 	int rvLen = 1;
-	*astar->solutionLength = 0;
-	int target = astar->goal;
+	*this->m_solutionLength = 0;
+	int target = this->m_goal;
 	int *rv = static_cast<int*>(malloc (rvLen * sizeof (int)));
-	int i = astar->goal;
+	int i = this->m_goal;
 
 	for (;;) {
-		i = nextNodeInSolution (astar, &target, i);
-		rv[*astar->solutionLength] = i;
-		(*astar->solutionLength)++;
-		if (*astar->solutionLength >= rvLen) {
+		i = nextNodeInSolution (&target, i);
+		rv[*this->m_solutionLength] = i;
+		(*this->m_solutionLength)++;
+		if (*this->m_solutionLength >= rvLen) {
 			rvLen *= 2;
 			rv = static_cast<int*>(realloc (rv, rvLen * sizeof (int)));
 			if (!rv)
 				return NULL;
 		}
-		if (i == astar->start)
+		if (i == this->m_start)
 			break;
 	}
 
-	(*astar->solutionLength)--; // don't include the starting tile
+	(*this->m_solutionLength)--; // don't include the starting tile
 	return rv;
 }
 
-
-static direction directionOfMove (Coordinate to, Coordinate from)
+static Direction MergeDirections(Direction d1, Direction d2)
 {
-	if (from.x == to.x) {
-		if (from.y == to.y)
-			return -1;
-		else if (from.y < to.y)
-			return 4;
-		else // from.y > to.y
-			return 0;
-	}
-	else if (from.x < to.x) {
-		if (from.y == to.y)
-			return 2;
-		else if (from.y < to.y)
-			return 3;
-		else // from.y > to.y
-			return 1;
-	}
-	else { // from.x > to.x
-		if (from.y == to.y)
-			return 6;
-		else if (from.y < to.y)
-			return 5;
-		else // from.y > to.y
-			return 7;
-	}
 
+  //  7 0 1
+  //  6 x 2
+  //  5 4 3
+  //
+  // We can merge only directions 0,2,4 and 6
+  //
+
+  if (d1 == Direction::NO_DIRECTION)
+    return d2;
+  if (d2 == Direction::NO_DIRECTION)
+    return d1;
+
+  if (directionIsDiagonal(d1) || directionIsDiagonal(d2))
+    return Direction::NO_DIRECTION;
+
+  int tmp1 = static_cast<int>(d1);
+  int tmp2 = static_cast<int>(d2);
+
+  if (std::abs(tmp1-tmp2) > 2)
+    return Direction::NO_DIRECTION;
+
+  return static_cast<Direction>((tmp1+tmp2)/2);
 }
 
-static direction directionWeCameFrom (astar_t *astar, int node, int nodeFrom)
+static Direction directionOfMove (Coordinate to, Coordinate from)
+{
+
+  Direction dir_x = Direction::NO_DIRECTION;
+  Direction dir_y = Direction::NO_DIRECTION;
+
+  if (from.x < to.x)
+    dir_x = Direction::E;
+  else if (from.x > to.x)
+    dir_x = Direction::W;
+
+  if (from.y < to.y)
+    dir_y = Direction::S;
+  else if (from.y > to.y)
+    dir_y = Direction::N;
+
+  return MergeDirections(dir_x, dir_y);
+}
+
+Direction AStar_jsp::directionWeCameFrom (int node, int nodeFrom)
 {
 	if (nodeFrom == -1)
-		return NO_DIRECTION;
+		return Direction::NO_DIRECTION;
 
-	return directionOfMove (getCoord (astar->bounds, node), 
-				getCoord (astar->bounds, nodeFrom));
+	return directionOfMove (getCoord (this->m_bounds, node), 
+				getCoord (this->m_bounds, nodeFrom));
 }
 
 int *astar_compute (const char *grid, 
@@ -396,7 +495,7 @@ int *astar_compute (const char *grid,
 		    int end)
 {
 	*solLength = -1;
-	astar_t astar;
+	AStar_jsp astar;
 	Coordinate bounds(boundX, boundY);
 
 	int size = bounds.x * bounds.y;
@@ -416,15 +515,15 @@ int *astar_compute (const char *grid,
   std::vector<double> gScores(size);
   std::vector<int> cameFrom(size);
 
-	astar.solutionLength = solLength;
-	astar.bounds = bounds;
-	astar.start = start;
-	astar.goal = end;
-	astar.grid = grid;
-	astar.open = open;
-	astar.closed = closed.data();
-	astar.gScores = gScores.data();
-	astar.cameFrom = cameFrom.data();
+	astar.m_solutionLength = solLength;
+	astar.m_bounds = bounds;
+	astar.m_start = start;
+	astar.m_goal = end;
+	astar.m_grid = grid;
+	astar.m_open = open;
+	astar.m_closed = closed.data();
+	astar.m_gScores = gScores.data();
+	astar.m_cameFrom = cameFrom.data();
 
 	memset (closed.data(), 0, sizeof(closed));
 
@@ -437,23 +536,23 @@ int *astar_compute (const char *grid,
 		Coordinate nodeCoord = getCoord (bounds, node);
 		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
 			freeQueue (open);
-			return recordSolution (&astar);
+			return astar.recordSolution ();
 		}
 
 		deleteMin (open);
 		closed[node] = 1;
 
-		direction from = directionWeCameFrom (&astar, 
-						      node,
-						      cameFrom[node]);
+    Direction from = astar.directionWeCameFrom (node, cameFrom[node]);
 
-		directionset dirs = 
-			forcedNeighbours (&astar, nodeCoord, from) 
-		      | naturalNeighbours (from);
+    DirectionSet fneighbours = astar.forcedNeighbours(nodeCoord, from);
+    DirectionSet nneighbours = naturalNeighbours(from);
 
-		for (int dir = nextDirectionInSet (&dirs); dir != NO_DIRECTION; dir = nextDirectionInSet (&dirs))
+		DirectionSet dirs(fneighbours);
+    dirs.insert(nneighbours.begin(), nneighbours.end());
+
+		for (Direction dir = nextDirectionInSet(dirs); dir != Direction::NO_DIRECTION; dir = nextDirectionInSet(dirs))
 		{
-			int newNode = jump (&astar, dir, node);
+			int newNode = astar.jump (dir, node);
 			Coordinate newCoord = getCoord (bounds, newNode);
 
 			// this'll also bail out if jump() returned -1
@@ -463,7 +562,7 @@ int *astar_compute (const char *grid,
 			if (closed[newNode])
 				continue;
 			
-			addToOpenSet (&astar, newNode, node);
+			astar.addToOpenSet (newNode, node);
 
 		}
 	}
@@ -480,7 +579,7 @@ int *astar_unopt_compute (const char *grid,
 		    int start, 
 		    int end)
 {
-	astar_t astar;
+	AStar_jsp astar;
 	Coordinate bounds(boundX, boundY);
 
 	int size = bounds.x * bounds.y;
@@ -500,16 +599,16 @@ int *astar_unopt_compute (const char *grid,
   std::vector<double> gScores(size);
   std::vector<int> cameFrom(size);
 
-	astar.solutionLength = solLength;
-	*astar.solutionLength = -1;
-	astar.bounds = bounds;
-	astar.start = start;
-	astar.goal = end;
-	astar.grid = grid;
-	astar.open = open;
-	astar.closed = closed.data();
-	astar.gScores = gScores.data();
-	astar.cameFrom = cameFrom.data();
+	astar.m_solutionLength = solLength;
+	*astar.m_solutionLength = -1;
+	astar.m_bounds = bounds;
+	astar.m_start = start;
+	astar.m_goal = end;
+	astar.m_grid = grid;
+	astar.m_open = open;
+	astar.m_closed = closed.data();
+	astar.m_gScores = gScores.data();
+	astar.m_cameFrom = cameFrom.data();
 
 	memset (closed.data(), 0, sizeof(closed));
 
@@ -523,13 +622,15 @@ int *astar_unopt_compute (const char *grid,
 		Coordinate nodeCoord = getCoord (bounds, node);
 		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
 			freeQueue (open);
-			return recordSolution (&astar);
+			return astar.recordSolution ();
 		}
 
 		deleteMin (open);
 		closed[node] = 1;
 
-		for (int dir = 0; dir < 8; dir++)
+    DirectionSet dirs = MakeFullDirectionSet();
+
+		for (Direction dir = nextDirectionInSet(dirs); dir != Direction::NO_DIRECTION; dir = nextDirectionInSet(dirs))
 		{
 			Coordinate newCoord = adjustInDirection (nodeCoord, dir);
 			int newNode = getIndex (bounds, newCoord);
@@ -540,7 +641,7 @@ int *astar_unopt_compute (const char *grid,
 			if (closed[newNode])
 				continue;
 			
-			addToOpenSet (&astar, newNode, node);
+			astar.addToOpenSet (newNode, node);
 
 		}
 	}
