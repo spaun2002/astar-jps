@@ -1,10 +1,12 @@
 #ifndef ASTAR_H_
 #define ASTAR_H_
 
-typedef struct coord {
+struct Coordinate {
 	int x;
 	int y;
-} coord_t;
+  Coordinate(int _x, int _y) : x(_x), y(_y) {};
+  Coordinate(){};
+};
 
 /* Run A* pathfinding over uniform-cost 2d grids using jump point search.
 

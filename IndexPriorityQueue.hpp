@@ -18,7 +18,7 @@ void insert (queue *q, int value, double priority);
 void deleteMin (queue *q);
 item *findMin (const queue *q);
 void changePriority (queue *q, int ind, double newPriority);
-void delete (queue *q, int ind);
+void delete_queue (queue *q, int ind);
 int priorityOf (const queue *q, int ind);
 int exists (const queue *q, int ind);
 queue *createQueue ();

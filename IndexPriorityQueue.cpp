@@ -1,4 +1,4 @@
-#include "IndexPriorityQueue.h"
+#include "IndexPriorityQueue.hpp"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -22,7 +22,7 @@ int makeSpace (queue *q, size_t size)
         if (newAllocated <= q->allocated)
                 return 0;
 
-        q->root = realloc (q->root, newAllocated);
+        q->root = static_cast<item*>(realloc (q->root, newAllocated));
         if (NULL == q->root)
                 exit (1); // I'm a bloody Haskell programmer, I don't have any business trying to do anything fancy when realloc fails
 
@@ -66,7 +66,7 @@ void insert (queue *q, int value, double pri)
         int newAllocated = smallestPowerOfTwoAfter ((value + 1) * sizeof(int));
 
         if ((value + 1) * sizeof (int) > q->indexAllocated) {
-		q->index = realloc (q->index, newAllocated);
+		q->index = static_cast<int*>(realloc (q->index, newAllocated));
 		if (NULL == q->index)
 			exit (1);
 		for (unsigned int j = q->indexAllocated / sizeof (int); j < newAllocated / sizeof (int); j++)
@@ -135,7 +135,7 @@ void changePriority (queue *q, int ind, double newPriority)
 		siftUp (q, q->index[ind]);
 }
 
-void delete (queue *q, int ind)
+void delete_queue (queue *q, int ind)
 {
 	changePriority (q, ind, INT_MIN);
 	deleteMin (q);

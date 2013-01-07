@@ -1,8 +1,9 @@
-#include "AStar.h"
+#include "AStar.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <vector>
 
 int main (int argc, char **argv)
 {
@@ -35,12 +36,13 @@ int main (int argc, char **argv)
 
 	fscanf (mapFile, "type octile\nheight %i\nwidth %i\nmap\n", &height, &width);
 
-	char grid[width*height];
-	memset (grid, 0, sizeof (char) * width * height);
+  std::vector<char> grid(width*height);
+	memset (grid.data(), 0, sizeof (char) * width * height);
+
+  std::vector<char> buf(width+1); //< space for a new line
 
 	for (int i = 0; i < height; i++) {
-		char buf[width + 1]; // space for a newline
-		fread (buf, 1, width + 1, mapFile);
+		fread (buf.data(), 1, width + 1, mapFile);
 		for (int j = 0; j < width; j++) {
 			if (buf[j] == '.' || buf[j] == 'G')
 				grid[width*i+j] = 1;
@@ -53,7 +55,7 @@ int main (int argc, char **argv)
 		int solLen = 0;
 		int begin = astar_getIndexByWidth (width, startX, startY);
 		int end = astar_getIndexByWidth (width, goalX, goalY);
-		free (astar_compute (grid, &solLen, width, height, begin, end));
+		free (astar_compute (grid.data(), &solLen, width, height, begin, end));
 		if (solLen > optimal) {
 			fprintf (stderr, "validity error! In map %s, from (%i,%i) to (%i, %i), expected length %i, was length %i\n", mapFileBuf, startX, startY, goalX, goalY, optimal, solLen);
 			exit (1);

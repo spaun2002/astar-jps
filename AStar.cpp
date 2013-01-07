@@ -1,15 +1,18 @@
-#include "AStar.h"
-#include "IndexPriorityQueue.h"
+#include "AStar.hpp"
+#include "IndexPriorityQueue.hpp"
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
+#include <cmath>
+#include <algorithm>
+#include <vector>
 
 // Distance metrics, you might want to change these to match your game mechanics
 
 // Chebyshev distance metric for distance estimation by default
-static double estimateDistance (coord_t start, coord_t end)
+inline static double estimateDistance (Coordinate start, Coordinate end)
 {
-	return fmax (abs (start.x - end.x), abs (start.y - end.y));
+	return std::max(abs(start.x - end.x), 
+                  abs(start.y - end.y));
 }
 
 // Since we only work on uniform-cost maps, this function only needs
@@ -18,7 +21,7 @@ static double estimateDistance (coord_t start, coord_t end)
 // Note that since we jump over points, we actually have to compute 
 // the entire distance - despite the uniform cost we can't just collapse
 // all costs to 1
-static double preciseDistance (coord_t start, coord_t end)
+static double preciseDistance (Coordinate start, Coordinate end)
 {
 	if (start.x - end.x != 0 && start.y - end.y != 0)
 		return sqrt (pow (start.x - end.x, 2) + 
@@ -33,7 +36,7 @@ typedef int node;
 
 typedef struct astar {
 	const char *grid;
-	coord_t bounds;
+	Coordinate bounds;
 	node start;
 	node goal;
 	queue *open;
@@ -71,7 +74,7 @@ static directionset addDirectionToSet (directionset dirs, direction dir)
 /* Coordinates are represented either as pairs of an x-coordinate and
    y-coordinate, or map indexes, as appropriate. getIndex and getCoord
    convert between the representations. */
-static int getIndex (coord_t bounds, coord_t c)
+static int getIndex (Coordinate bounds, Coordinate c)
 {
 	return c.x + c.y * bounds.x;
 }
@@ -81,10 +84,9 @@ int astar_getIndexByWidth (int width, int x, int y)
 	return x + y * width;
 }
 
-static coord_t getCoord (coord_t bounds, int c)
+static Coordinate getCoord (Coordinate bounds, int c)
 {
-	coord_t rv = { c % bounds.x, c / bounds.x };
-	return rv;
+	return Coordinate ( c % bounds.x, c / bounds.x );
 }
 
 void astar_getCoordByWidth (int width, int node, int *x, int *y)
@@ -95,13 +97,13 @@ void astar_getCoordByWidth (int width, int node, int *x, int *y)
 
 
 // is this coordinate contained within the map bounds?
-static int contained (coord_t bounds, coord_t c)
+static int contained (Coordinate bounds, Coordinate c)
 {
 	return c.x >= 0 && c.y >= 0 && c.x < bounds.x && c.y < bounds.y;
 }
 
 // is this coordinate within the map bounds, and also walkable?
-static int isEnterable (astar_t *astar, coord_t coord)
+static int isEnterable (astar_t *astar, Coordinate coord)
 {
 	node node = getIndex (astar->bounds, coord);
 	return contained (astar->bounds, coord) && 
@@ -114,23 +116,23 @@ static int directionIsDiagonal (direction dir)
 }
 
 // the coordinate one tile in the given direction
-static coord_t adjustInDirection (coord_t c, int dir)
+static Coordinate adjustInDirection (Coordinate c, int dir)
 {
 	// we want to implement "rotation" - that is, for instance, we can
 	// subtract 2 from the direction "north" and get "east"
 	// C's modulo operator doesn't quite behave the right way to do this,
 	// but for our purposes this kluge should be good enough
 	switch ((dir + 65536) % 8) {
-	case 0: return (coord_t) {c.x, c.y - 1};
-	case 1: return (coord_t) {c.x + 1, c.y - 1};
-	case 2: return (coord_t) {c.x + 1, c.y };
-	case 3: return (coord_t) {c.x + 1, c.y + 1};
-	case 4: return (coord_t) {c.x, c.y + 1};
-	case 5: return (coord_t) {c.x - 1, c.y + 1};
-	case 6: return (coord_t) {c.x - 1, c.y};
-	case 7: return (coord_t) {c.x - 1, c.y - 1};
+	case 0: return Coordinate(c.x, c.y-1);
+  case 1: return Coordinate(c.x + 1, c.y - 1);
+  case 2: return Coordinate(c.x + 1, c.y    );
+  case 3: return Coordinate(c.x + 1, c.y + 1);
+  case 4: return Coordinate(c.x, c.y + 1    );
+  case 5: return Coordinate(c.x - 1, c.y + 1);
+  case 6: return Coordinate(c.x - 1, c.y    );
+  case 7: return Coordinate(c.x - 1, c.y - 1);
 	}
-	return (coord_t) { -1, -1 };
+	return Coordinate( -1, -1 );
 }
 
 // logical implication operator
@@ -186,7 +188,7 @@ static int implies (int a, int b)
    
  */
 /*
-static int hasForcedNeighbours (astar_t *astar, coord_t coord, int dir)
+static int hasForcedNeighbours (astar_t *astar, Coordinate coord, int dir)
 {
 #define ENTERABLE(n) isEnterable (astar, \
 	                          adjustInDirection (coord, dir + (n)))
@@ -200,7 +202,7 @@ static int hasForcedNeighbours (astar_t *astar, coord_t coord, int dir)
 }
 */
 static directionset forcedNeighbours (astar_t *astar, 
-				      coord_t coord, 
+				      Coordinate coord, 
 				      direction dir)
 {
 	if (dir == NO_DIRECTION)
@@ -243,8 +245,8 @@ static void addToOpenSet (astar_t *astar,
 			  int node, 
 			  int nodeFrom)
 {
-	coord_t nodeCoord = getCoord (astar->bounds, node);
-	coord_t nodeFromCoord = getCoord (astar->bounds, nodeFrom);
+	Coordinate nodeCoord = getCoord (astar->bounds, node);
+	Coordinate nodeFromCoord = getCoord (astar->bounds, nodeFrom);
 
 	if (!exists (astar->open, node)) {
 		astar->cameFrom[node] = nodeFrom;
@@ -258,7 +260,7 @@ static void addToOpenSet (astar_t *astar,
 		 astar->gScores[nodeFrom] + 
 		 preciseDistance (nodeFromCoord, nodeCoord)) {
 		astar->cameFrom[node] = nodeFrom;
-		int oldGScore = astar->gScores[node];
+		double oldGScore = astar->gScores[node];
 		astar->gScores[node] = astar->gScores[nodeFrom] + 
 			preciseDistance (nodeFromCoord, nodeCoord);
 		double newPri = priorityOf (astar->open, node)
@@ -272,7 +274,7 @@ static void addToOpenSet (astar_t *astar,
 // directly translated from "algorithm 2" in the paper
 static int jump (astar_t *astar, direction dir, int start)
 {
-	coord_t coord = adjustInDirection (getCoord (astar->bounds, start), dir);
+	Coordinate coord = adjustInDirection (getCoord (astar->bounds, start), dir);
 	int node = getIndex (astar->bounds, coord);
 	if (!isEnterable (astar, coord))
 		return -1;
@@ -298,8 +300,8 @@ static int nextNodeInSolution (astar_t *astar,
 			       int *target,
 			       int node)
 {
-	coord_t c = getCoord (astar->bounds, node);
-	coord_t cTarget = getCoord (astar->bounds, *target);
+	Coordinate c = getCoord (astar->bounds, node);
+	Coordinate cTarget = getCoord (astar->bounds, *target);
 
 	if (c.x < cTarget.x) 
 		c.x++;
@@ -326,7 +328,7 @@ static int *recordSolution (astar_t *astar)
 	int rvLen = 1;
 	*astar->solutionLength = 0;
 	int target = astar->goal;
-	int *rv = malloc (rvLen * sizeof (int));
+	int *rv = static_cast<int*>(malloc (rvLen * sizeof (int)));
 	int i = astar->goal;
 
 	for (;;) {
@@ -335,7 +337,7 @@ static int *recordSolution (astar_t *astar)
 		(*astar->solutionLength)++;
 		if (*astar->solutionLength >= rvLen) {
 			rvLen *= 2;
-			rv = realloc (rv, rvLen * sizeof (int));
+			rv = static_cast<int*>(realloc (rv, rvLen * sizeof (int)));
 			if (!rv)
 				return NULL;
 		}
@@ -348,7 +350,7 @@ static int *recordSolution (astar_t *astar)
 }
 
 
-static direction directionOfMove (coord_t to, coord_t from)
+static direction directionOfMove (Coordinate to, Coordinate from)
 {
 	if (from.x == to.x) {
 		if (from.y == to.y)
@@ -395,7 +397,7 @@ int *astar_compute (const char *grid,
 {
 	*solLength = -1;
 	astar_t astar;
-	coord_t bounds = {boundX, boundY};
+	Coordinate bounds(boundX, boundY);
 
 	int size = bounds.x * bounds.y;
 
@@ -403,16 +405,16 @@ int *astar_compute (const char *grid,
 	if (start >= size || start < 0 || end >= size || end < 0)
 		return NULL;
 
-	coord_t startCoord = getCoord (bounds, start);
-	coord_t endCoord = getCoord (bounds, end);
+	Coordinate startCoord = getCoord (bounds, start);
+	Coordinate endCoord = getCoord (bounds, end);
 
 	if (!contained (bounds, startCoord) || !contained (bounds, endCoord))
 		return NULL;
 
 	queue *open = createQueue();
-	char closed [size];
-	double gScores [size];
-	int cameFrom [size];
+  std::vector<char> closed(size);
+  std::vector<double> gScores(size);
+  std::vector<int> cameFrom(size);
 
 	astar.solutionLength = solLength;
 	astar.bounds = bounds;
@@ -420,11 +422,11 @@ int *astar_compute (const char *grid,
 	astar.goal = end;
 	astar.grid = grid;
 	astar.open = open;
-	astar.closed = closed;
-	astar.gScores = gScores;
-	astar.cameFrom = cameFrom;
+	astar.closed = closed.data();
+	astar.gScores = gScores.data();
+	astar.cameFrom = cameFrom.data();
 
-	memset (closed, 0, sizeof(closed));
+	memset (closed.data(), 0, sizeof(closed));
 
 	gScores[start] = 0;
 	cameFrom[start] = -1;
@@ -432,7 +434,7 @@ int *astar_compute (const char *grid,
 	insert (open, start, estimateDistance (startCoord, endCoord));
 	while (open->size) {
 		int node = findMin (open)->value; 
-		coord_t nodeCoord = getCoord (bounds, node);
+		Coordinate nodeCoord = getCoord (bounds, node);
 		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
 			freeQueue (open);
 			return recordSolution (&astar);
@@ -452,7 +454,7 @@ int *astar_compute (const char *grid,
 		for (int dir = nextDirectionInSet (&dirs); dir != NO_DIRECTION; dir = nextDirectionInSet (&dirs))
 		{
 			int newNode = jump (&astar, dir, node);
-			coord_t newCoord = getCoord (bounds, newNode);
+			Coordinate newCoord = getCoord (bounds, newNode);
 
 			// this'll also bail out if jump() returned -1
 			if (!contained (bounds, newCoord))
@@ -479,7 +481,7 @@ int *astar_unopt_compute (const char *grid,
 		    int end)
 {
 	astar_t astar;
-	coord_t bounds = {boundX, boundY};
+	Coordinate bounds(boundX, boundY);
 
 	int size = bounds.x * bounds.y;
 
@@ -487,16 +489,16 @@ int *astar_unopt_compute (const char *grid,
 	if (start >= size || start < 0 || end >= size || end < 0)
 		return NULL;
 
-	coord_t startCoord = getCoord (bounds, start);
-	coord_t endCoord = getCoord (bounds, end);
+	Coordinate startCoord = getCoord (bounds, start);
+	Coordinate endCoord = getCoord (bounds, end);
 
 	if (!contained (bounds, startCoord) || !contained (bounds, endCoord))
 		return NULL;
 
 	queue *open = createQueue();
-	char closed [size];
-	double gScores [size];
-	int cameFrom [size];
+  std::vector<char> closed(size);
+  std::vector<double> gScores(size);
+  std::vector<int> cameFrom(size);
 
 	astar.solutionLength = solLength;
 	*astar.solutionLength = -1;
@@ -505,11 +507,11 @@ int *astar_unopt_compute (const char *grid,
 	astar.goal = end;
 	astar.grid = grid;
 	astar.open = open;
-	astar.closed = closed;
-	astar.gScores = gScores;
-	astar.cameFrom = cameFrom;
+	astar.closed = closed.data();
+	astar.gScores = gScores.data();
+	astar.cameFrom = cameFrom.data();
 
-	memset (closed, 0, sizeof(closed));
+	memset (closed.data(), 0, sizeof(closed));
 
 	gScores[start] = 0;
 	cameFrom[start] = -1;
@@ -518,7 +520,7 @@ int *astar_unopt_compute (const char *grid,
 
 	while (open->size) {
 		int node = findMin (open)->value; 
-		coord_t nodeCoord = getCoord (bounds, node);
+		Coordinate nodeCoord = getCoord (bounds, node);
 		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
 			freeQueue (open);
 			return recordSolution (&astar);
@@ -529,7 +531,7 @@ int *astar_unopt_compute (const char *grid,
 
 		for (int dir = 0; dir < 8; dir++)
 		{
-			coord_t newCoord = adjustInDirection (nodeCoord, dir);
+			Coordinate newCoord = adjustInDirection (nodeCoord, dir);
 			int newNode = getIndex (bounds, newCoord);
 
 			if (!contained (bounds, newCoord) || !grid[newNode])
