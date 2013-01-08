@@ -53,9 +53,11 @@ int main (int argc, char **argv)
 	int doContinue = 1;
 	do {
 		int solLen = 0;
-		int begin = astar_getIndexByWidth (width, startX, startY);
-		int end = astar_getIndexByWidth (width, goalX, goalY);
-		free (astar_compute (grid.data(), &solLen, width, height, begin, end));
+
+    AStarJPS::SimpleMap<char> map(grid.data(), width, height);
+
+    auto result = AStarJPS::AStarCompute(map, solLen, AStarJPS::Coordinate(startX, startY), AStarJPS::Coordinate(goalX, goalY));
+
 		if (solLen > optimal) {
 			fprintf (stderr, "validity error! In map %s, from (%i,%i) to (%i, %i), expected length %i, was length %i\n", mapFileBuf, startX, startY, goalX, goalY, optimal, solLen);
 			exit (1);

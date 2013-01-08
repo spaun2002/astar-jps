@@ -8,6 +8,11 @@
 #include <set>
 #include <queue>
 
+
+namespace AStarJPS
+{
+
+
 // Distance metrics, you might want to change these to match your game mechanics
 
 // Chebyshev distance metric for distance estimation by default
@@ -68,11 +73,12 @@ typedef std::set<Direction> DirectionSet;
 
 typedef int node;
 
-class AStar_jsp
+class AStar_jps
 {
 public:
-  const char* m_grid;
-  Coordinate m_bounds;
+  const IMap* m_map;
+  //const char* m_grid;
+  //Coordinate m_bounds;
   node m_start;
   node m_goal;
   queue* m_open;
@@ -82,13 +88,13 @@ public:
   int *m_solutionLength;
 
 public:
-  bool isEnterable (const Coordinate& coord);
+  inline bool isEnterable (const Coordinate& coord);
   DirectionSet forcedNeighbours (const Coordinate& coord, Direction dir);
   void addToOpenSet (int node, int nodeFrom);
   bool HasForcedNeighbours(Coordinate coord, Direction dir);
   int jump(Direction dir, int start);
   int nextNodeInSolution (int *target, int node);
-  int *recordSolution ();
+  std::vector<int> recordSolution ();
   Direction directionWeCameFrom (int node, int nodeFrom);
 };
 
@@ -147,11 +153,9 @@ static int contained (Coordinate bounds, Coordinate c)
 }
 
 // is this coordinate within the map bounds, and also walkable?
-bool AStar_jsp::isEnterable (const Coordinate& coord)
+bool AStar_jps::isEnterable (const Coordinate& coord)
 {
-	node node = getIndex (this->m_bounds, coord);
-	return contained (this->m_bounds, coord) && 
-		this->m_grid[node];
+  return m_map->Contains(coord) && m_map->IsEnterable(m_map->GetIndexByCoord(coord));
 }
 
 static int directionIsDiagonal (Direction dir)
@@ -262,7 +266,7 @@ static int hasForcedNeighbours (astar_t *astar, Coordinate coord, int dir)
 #undef ENTERABLE
 }
 */
-DirectionSet AStar_jsp::forcedNeighbours (const Coordinate& coord, 
+DirectionSet AStar_jps::forcedNeighbours (const Coordinate& coord, 
                                           Direction dir)
 {
   DirectionSet dirs;
@@ -327,16 +331,16 @@ static DirectionSet naturalNeighbours (Direction dir)
 	return dirs;
 }
 
-void AStar_jsp::addToOpenSet (int node, 
+void AStar_jps::addToOpenSet (int node, 
                               int nodeFrom)
 {
-	Coordinate nodeCoord = getCoord (this->m_bounds, node);
-	Coordinate nodeFromCoord = getCoord (this->m_bounds, nodeFrom);
+	Coordinate nodeCoord = m_map->GetCoordByIndex(node);
+	Coordinate nodeFromCoord = m_map->GetCoordByIndex(nodeFrom);
 
 	if (!exists (this->m_open, node)) {
 		this->m_cameFrom[node] = nodeFrom;
 		this->m_gScores[node] = this->m_gScores[nodeFrom] + preciseDistance(nodeFromCoord, nodeCoord);
-		insert (this->m_open, node, this->m_gScores[node] + estimateDistance(nodeCoord, getCoord (this->m_bounds, this->m_goal)));
+		insert (this->m_open, node, this->m_gScores[node] + estimateDistance(nodeCoord, m_map->GetCoordByIndex(m_goal)));
 	}
 	else if (this->m_gScores[node] > this->m_gScores[nodeFrom] + preciseDistance(nodeFromCoord, nodeCoord)) 
   {
@@ -348,16 +352,16 @@ void AStar_jsp::addToOpenSet (int node,
 	}	
 }
 
-bool AStar_jsp::HasForcedNeighbours(Coordinate coord, Direction dir)
+bool AStar_jps::HasForcedNeighbours(Coordinate coord, Direction dir)
 {
   return !forcedNeighbours(coord, dir).empty();
 }
 
 // directly translated from "algorithm 2" in the paper
-int AStar_jsp::jump(Direction dir, int start)
+int AStar_jps::jump(Direction dir, int start)
 {
-	Coordinate coord = adjustInDirection (getCoord (this->m_bounds, start), dir);
-	int node = getIndex(this->m_bounds, coord);
+	Coordinate coord = adjustInDirection (m_map->GetCoordByIndex(start), dir);
+	int node = m_map->GetIndexByCoord(coord);
 	if (!isEnterable (coord))
 		return -1;
 
@@ -380,11 +384,11 @@ int AStar_jsp::jump(Direction dir, int start)
 }
 
 // path interpolation between jump points in here
-int AStar_jsp::nextNodeInSolution (int *target,
-                               int node)
+int AStar_jps::nextNodeInSolution (int *target,
+                                   int node)
 {
-	Coordinate c = getCoord (this->m_bounds, node);
-	Coordinate cTarget = getCoord (this->m_bounds, *target);
+	Coordinate c = m_map->GetCoordByIndex(node);
+	Coordinate cTarget = m_map->GetCoordByIndex(*target);
 
 	if (c.x < cTarget.x) 
 		c.x++;
@@ -396,7 +400,7 @@ int AStar_jsp::nextNodeInSolution (int *target,
 	else if (c.y > cTarget.y)
 		c.y--;
 
-	node = getIndex (this->m_bounds, c);
+	node = m_map->GetIndexByCoord(c);
 
 	if (node == *target)
 		*target = this->m_cameFrom[*target];
@@ -406,29 +410,21 @@ int AStar_jsp::nextNodeInSolution (int *target,
 
 // a bit more complex than the usual A* solution-recording method,
 // due to the need to interpolate path chunks
-int* AStar_jsp::recordSolution ()
+std::vector<int> AStar_jps::recordSolution()
 {
-	int rvLen = 1;
-	*this->m_solutionLength = 0;
+	*m_solutionLength = 0;
 	int target = this->m_goal;
-	int *rv = static_cast<int*>(malloc (rvLen * sizeof (int)));
+  std::vector<int> rv;
 	int i = this->m_goal;
 
-	for (;;) {
-		i = nextNodeInSolution (&target, i);
-		rv[*this->m_solutionLength] = i;
-		(*this->m_solutionLength)++;
-		if (*this->m_solutionLength >= rvLen) {
-			rvLen *= 2;
-			rv = static_cast<int*>(realloc (rv, rvLen * sizeof (int)));
-			if (!rv)
-				return NULL;
-		}
-		if (i == this->m_start)
-			break;
-	}
+  while (i != m_start)
+  {
+    i = nextNodeInSolution(&target, i);
+    rv.push_back(i);
+    (*m_solutionLength)++;
+  }
 
-	(*this->m_solutionLength)--; // don't include the starting tile
+	(*m_solutionLength)--; // don't include the starting tile
 	return rv;
 }
 
@@ -478,48 +474,47 @@ static Direction directionOfMove (Coordinate to, Coordinate from)
   return MergeDirections(dir_x, dir_y);
 }
 
-Direction AStar_jsp::directionWeCameFrom (int node, int nodeFrom)
+Direction AStar_jps::directionWeCameFrom (int node, int nodeFrom)
 {
 	if (nodeFrom == -1)
 		return Direction::NO_DIRECTION;
 
-	return directionOfMove (getCoord (this->m_bounds, node), 
-				getCoord (this->m_bounds, nodeFrom));
+	return directionOfMove (m_map->GetCoordByIndex(node), m_map->GetCoordByIndex(nodeFrom));
 }
 
-int *astar_compute (const char *grid, 
-		    int *solLength, 
-		    int boundX, 
-		    int boundY, 
-		    int start, 
-		    int end)
+std::vector<int> AStarCompute(const IMap& map, 
+                              int& solutionLength, 
+                              const Coordinate& start, 
+                              const Coordinate& end)
 {
-	*solLength = -1;
-	AStar_jsp astar;
-	Coordinate bounds(boundX, boundY);
+  solutionLength = -1;
+  if (!map.Contains(start) || !map.Contains(end))
+  {
+    return std::vector<int>();
+  }
 
-	int size = bounds.x * bounds.y;
+	AStar_jps astar;
+
+	auto size = map.GetMaxIndex()+1;
 
 
-	if (start >= size || start < 0 || end >= size || end < 0)
-		return NULL;
+	//Coordinate startCoord = getCoord (bounds, start);
+	//Coordinate endCoord = getCoord (bounds, end);
 
-	Coordinate startCoord = getCoord (bounds, start);
-	Coordinate endCoord = getCoord (bounds, end);
-
-	if (!contained (bounds, startCoord) || !contained (bounds, endCoord))
-		return NULL;
+	//if (!contained (bounds, startCoord) || !contained (bounds, endCoord))
+	//	return std::vector<int>();
 
 	queue *open = createQueue();
   std::vector<char> closed(size);
   std::vector<double> gScores(size);
   std::vector<int> cameFrom(size);
 
-	astar.m_solutionLength = solLength;
-	astar.m_bounds = bounds;
-	astar.m_start = start;
-	astar.m_goal = end;
-	astar.m_grid = grid;
+  auto endIdx = map.GetIndexByCoord(end);
+
+	astar.m_solutionLength = &solutionLength;
+  astar.m_map = &map;
+	astar.m_start = map.GetIndexByCoord(start);
+	astar.m_goal = endIdx;
 	astar.m_open = open;
 	astar.m_closed = closed.data();
 	astar.m_gScores = gScores.data();
@@ -527,14 +522,14 @@ int *astar_compute (const char *grid,
 
 	memset (closed.data(), 0, sizeof(closed));
 
-	gScores[start] = 0;
-	cameFrom[start] = -1;
+	gScores[astar.m_start] = 0;
+	cameFrom[astar.m_start] = -1;
 
-	insert (open, start, estimateDistance (startCoord, endCoord));
+	insert (open, astar.m_start, estimateDistance (start, end));
 	while (open->size) {
 		int node = findMin (open)->value; 
-		Coordinate nodeCoord = getCoord (bounds, node);
-		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
+    if (node == endIdx)
+    {
 			freeQueue (open);
 			return astar.recordSolution ();
 		}
@@ -544,7 +539,7 @@ int *astar_compute (const char *grid,
 
     Direction from = astar.directionWeCameFrom (node, cameFrom[node]);
 
-    DirectionSet fneighbours = astar.forcedNeighbours(nodeCoord, from);
+    DirectionSet fneighbours = astar.forcedNeighbours(map.GetCoordByIndex(node), from);
     DirectionSet nneighbours = naturalNeighbours(from);
 
 		DirectionSet dirs(fneighbours);
@@ -553,58 +548,51 @@ int *astar_compute (const char *grid,
 		for (Direction dir = nextDirectionInSet(dirs); dir != Direction::NO_DIRECTION; dir = nextDirectionInSet(dirs))
 		{
 			int newNode = astar.jump (dir, node);
-			Coordinate newCoord = getCoord (bounds, newNode);
-
-			// this'll also bail out if jump() returned -1
-			if (!contained (bounds, newCoord))
-				continue;
-
-			if (closed[newNode])
-				continue;
 			
-			astar.addToOpenSet (newNode, node);
+      if (newNode >= 0 && static_cast<size_t>(newNode) <= map.GetMaxIndex())
+      {
+        if (closed[newNode])
+          continue;
 
+        astar.addToOpenSet (newNode, node);
+      }
 		}
 	}
 	freeQueue (open);
-	return NULL;
+	return std::vector<int>();
 }
 
 
 
-int *astar_unopt_compute (const char *grid, 
-		    int *solLength, 
-		    int boundX, 
-		    int boundY, 
-		    int start, 
-		    int end)
+std::vector<int> AStarUnoptCompute(const IMap& map, 
+                                   int& solutionLength, 
+                                   const Coordinate& start, 
+                                   const Coordinate& end)
 {
-	AStar_jsp astar;
-	Coordinate bounds(boundX, boundY);
+	AStar_jps astar;
+	
+  auto size = map.GetMaxIndex()+1;
+  
+ // Coordinate bounds(boundX, boundY);
 
-	int size = bounds.x * bounds.y;
-
-
-	if (start >= size || start < 0 || end >= size || end < 0)
-		return NULL;
-
-	Coordinate startCoord = getCoord (bounds, start);
-	Coordinate endCoord = getCoord (bounds, end);
-
-	if (!contained (bounds, startCoord) || !contained (bounds, endCoord))
-		return NULL;
+	//int size = bounds.x * bounds.y;
+  solutionLength = -1;
+  if (!map.Contains(start) || !map.Contains(end))
+  {
+    return std::vector<int>();
+  }
 
 	queue *open = createQueue();
   std::vector<char> closed(size);
   std::vector<double> gScores(size);
   std::vector<int> cameFrom(size);
 
-	astar.m_solutionLength = solLength;
-	*astar.m_solutionLength = -1;
-	astar.m_bounds = bounds;
-	astar.m_start = start;
-	astar.m_goal = end;
-	astar.m_grid = grid;
+  auto endIdx = map.GetIndexByCoord(end);
+
+	astar.m_solutionLength = &solutionLength;
+  astar.m_map = &map;
+	astar.m_start = map.GetIndexByCoord(start);
+	astar.m_goal = endIdx;
 	astar.m_open = open;
 	astar.m_closed = closed.data();
 	astar.m_gScores = gScores.data();
@@ -612,15 +600,15 @@ int *astar_unopt_compute (const char *grid,
 
 	memset (closed.data(), 0, sizeof(closed));
 
-	gScores[start] = 0;
-	cameFrom[start] = -1;
+	gScores[astar.m_start] = 0;
+	cameFrom[astar.m_start] = -1;
 
-	insert (open, start, estimateDistance (startCoord, endCoord));
+	insert (open, astar.m_start, estimateDistance (start, end));
 
 	while (open->size) {
 		int node = findMin (open)->value; 
-		Coordinate nodeCoord = getCoord (bounds, node);
-		if (nodeCoord.x == endCoord.x && nodeCoord.y == endCoord.y) {
+    if (node == endIdx)
+    {
 			freeQueue (open);
 			return astar.recordSolution ();
 		}
@@ -632,11 +620,11 @@ int *astar_unopt_compute (const char *grid,
 
 		for (Direction dir = nextDirectionInSet(dirs); dir != Direction::NO_DIRECTION; dir = nextDirectionInSet(dirs))
 		{
-			Coordinate newCoord = adjustInDirection (nodeCoord, dir);
-			int newNode = getIndex (bounds, newCoord);
+			Coordinate newCoord = adjustInDirection (map.GetCoordByIndex(node), dir);
+			int newNode = map.GetIndexByCoord(newCoord);
 
-			if (!contained (bounds, newCoord) || !grid[newNode])
-				continue;
+      if (newNode < 0 || static_cast<size_t>(newNode) > map.GetMaxIndex() || !map.IsEnterable(newNode))
+        continue;
 
 			if (closed[newNode])
 				continue;
@@ -646,6 +634,7 @@ int *astar_unopt_compute (const char *grid,
 		}
 	}
 	freeQueue (open);
-	return NULL;
+	return std::vector<int>();
 }
 
+}//namespace AStarJPS
